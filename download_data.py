@@ -252,6 +252,47 @@ def _get_completed_fiscal_years(checkpoint_folder: Path) -> set[int]:
     return completed
 
 
+def _get_completed_years(checkpoint_folder: Path) -> set[int]:
+    """
+    Scan checkpoint folder and return set of completed calendar years.
+
+    Args:
+        checkpoint_folder: Path to the checkpoint folder
+
+    Returns:
+        Set of calendar years that have already been downloaded and saved
+    """
+    if not checkpoint_folder.exists():
+        return set()
+    completed = set()
+    for f in checkpoint_folder.glob("year_*.parquet"):
+        match = re.match(r"year_(\d+)\.parquet", f.name)
+        if match:
+            completed.add(int(match.group(1)))
+    return completed
+
+
+def _combine_year_checkpoints(checkpoint_folder: Path, output_path: Path) -> None:
+    """
+    Combine all year checkpoint files into final output.
+
+    Args:
+        checkpoint_folder: Path to the checkpoint folder
+        output_path: Path to the final combined output file
+    """
+    all_files = sorted(checkpoint_folder.glob("year_*.parquet"))
+    if not all_files:
+        print("  [!] No checkpoint files found to combine")
+        return
+
+    print(f"  Combining {len(all_files)} checkpoint files...")
+    dfs = [pl.read_parquet(f) for f in all_files]
+    combined = pl.concat(dfs)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    combined.write_parquet(output_path)
+    print(f"  Saved {len(combined):,} total rows to {output_path}")
+
+
 def _save_fiscal_year_checkpoint(
     checkpoint_folder: Path,
     fiscal_year: int,
@@ -762,17 +803,29 @@ def download_crsp_daily(
     output_path: Path,
     start_date: str,
     end_date: str,
+    clean_checkpoints: bool = False,
 ) -> None:
-    """Download CRSP Daily Stock File (raw, without names). Downloads year-by-year sequentially."""
+    """Download CRSP Daily Stock File (raw, without names). Downloads year-by-year with checkpoints."""
     if file_exists_skip(output_path, "CRSP Daily Stock File"):
         return
 
     print("Downloading CRSP Daily Stock File...")
 
+    checkpoint_folder = _get_checkpoint_folder(output_path, "crsp_daily")
+    completed_years = _get_completed_years(checkpoint_folder)
+    if completed_years:
+        print(
+            f"  Found {len(completed_years)} existing checkpoints: "
+            f"{min(completed_years)}-{max(completed_years)}"
+        )
+
     chunks = _generate_yearly_chunks(start_date, end_date)
-    all_dfs = []
     for chunk_start, chunk_end in chunks:
-        year = chunk_start[:4]
+        year = int(chunk_start[:4])
+        if year in completed_years:
+            print(f"  [skip] Year {year} already checkpointed")
+            continue
+
         print(f"  Downloading year {year}...", flush=True)
         query = f"""
         SELECT permno, date, prc, ret, vol, shrout, askhi, bidlo, bid, ask
@@ -781,12 +834,17 @@ def download_crsp_daily(
         """
         df_chunk = run_query(conn, query)
         print(f"  Year {year}: {len(df_chunk):,} rows", flush=True)
-        all_dfs.append(df_chunk)
 
-    df = pl.concat(all_dfs)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    df.write_parquet(output_path)
-    print(f"  Saved {len(df):,} rows to {output_path}")
+        if len(df_chunk) > 0:
+            checkpoint_folder.mkdir(parents=True, exist_ok=True)
+            df_chunk.write_parquet(checkpoint_folder / f"year_{year}.parquet")
+            print(f"    [checkpoint] Saved year {year}")
+
+    # Combine all checkpoints into final file
+    _combine_year_checkpoints(checkpoint_folder, output_path)
+
+    if clean_checkpoints:
+        _cleanup_checkpoints(checkpoint_folder)
 
 
 def download_compustat_funda(
@@ -1214,6 +1272,7 @@ def main():
         DATA_DIR / "us" / "crsp_daily.parquet",
         start_date,
         end_date,
+        clean_checkpoints=clean_checkpoints,
     )
 
     download_compustat_funda(
