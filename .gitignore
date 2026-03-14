@@ -1,0 +1,33 @@
+# Environment variables (contains secrets)
+.env
+
+# Data directories (large files)
+data/
+*.parquet
+*.csv
+
+# Pixi environment
+.pixi/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Jupyter
+.ipynb_checkpoints/

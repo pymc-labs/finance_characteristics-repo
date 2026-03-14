@@ -1,0 +1,44 @@
+[project]
+name = "data_collection"
+version = "0.1.0"
+description = "62 firm characteristics from Freyberger, Neuhierl, & Weber (2020)"
+channels = ["conda-forge"]
+platforms = ["win-64", "linux-64", "osx-arm64"]
+
+[dependencies]
+python = ">=3.11"
+polars = ">=1.0"
+pyarrow = ">=14.0"
+connectorx = ">=0.3"
+click = ">=8.0"
+tqdm = ">=4.0"
+python-dotenv = ">=1.0"
+pre-commit = ">=4.5.0,<5"
+wrds = ">=3.4.0,<4"
+jupyterlab = ">=4.5.0,<5"
+matplotlib = ">=3.10.8,<4"
+seaborn = ">=0.13.2,<0.14"
+
+[feature.dev.dependencies]
+pytest = ">=8.0"
+ruff = ">=0.4"
+ipython = ">=8.0"
+
+[environments]
+default = ["dev"]
+
+[tasks]
+# Data download
+download = "python download_data.py"
+
+# Run characteristic pipeline
+us = "python main.py"
+run = "python main.py"
+
+# Validation
+validate = "python main.py --validate-only"
+
+# Development
+test = "pytest tests/ -v"
+lint = "ruff check ."
+format = "ruff format ."
