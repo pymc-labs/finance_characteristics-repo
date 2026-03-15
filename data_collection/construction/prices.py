@@ -272,10 +272,9 @@ def compute_beta_characteristics(
         ]
     )
 
-    # Sample at month-end dates, then compute beta metrics
-    result = (
-        beta_daily.filter(pl.col("date") == pl.col("date").dt.month_end())
-        .with_columns(
+    # Compute beta metrics on all daily data, then sample last trading day per month
+    beta_all = (
+        beta_daily.with_columns(
             [
                 # Covariance = E[XY] - E[X]*E[Y]
                 (pl.col("mean_prod") - pl.col("mean_ret") * pl.col("mean_mkt")).alias(
@@ -302,6 +301,16 @@ def compute_beta_characteristics(
                 .alias("Idio_vol"),
             ]
         )
+        .with_columns(pl.col("date").dt.month_end().alias("month_end"))
+        .sort([id_col, "date"])
+    )
+
+    # Take the last trading day of each month (avoids dropping months
+    # where the calendar month-end falls on a weekend/holiday)
+    result = (
+        beta_all.group_by([id_col, "month_end"])
+        .last()
+        .drop("month_end")
         .select([id_col, "date", "Beta", "Beta_Cor", "Idio_vol"])
     )
 
